@@ -1,123 +1,140 @@
-# Quick guide
+# Fringe fitting for optical spectra
 
-This script processes spectra stored in a **multi-sheet Excel workbook** and fits fringe peaks with a **two-stage Gaussian workflow**.
+Finds and fits the interference fringes in transmission or reflection spectra of thin transparent layers, such as the sample chamber of a diamond anvil cell (DAC), a film or a plate. Each fringe is fitted with a Gaussian to give its centre.
 
-For each sheet, it:
-- reads wavelength and intensity data
-- converts wavelength (nm) to wavenumber (µm⁻¹)
-- subtracts the baseline
-- smooths the spectrum with Savitzky-Golay
-- detects candidate peaks
-- fits Gaussians on the smoothed spectrum (**Stage 1**)
-- refits accepted peaks on the raw baseline-subtracted spectrum (**Stage 2**)
-- removes overlapping fits using a spacing filter
-- calculates delta values from the fitted fringe centres
-- calculates a **dispersion table** containing all valid delta values as a function of average wavelength
-- saves peak tables, delta summaries, dispersion outputs, and overview plots
+This is the fringe-fitting step used in R. O'Beirne and J. E. Proctor, *Dispersion of the Refractive Index of KCl up to 5 GPa Measured Using Confocal Laser Microscopy and White-Light Interferometry* (submitted). With its default settings it reproduces the 203 fringe centres used for the 0.68 GPa KCl spectrum in the paper exactly. It is written to work on other fringe spectra without changes to the code.
 
-Fringe numbers are assigned once after initial peak selection and are **not renumbered later**.
+## What it does
 
-## Input format
+For each spectrum, `fringe_fitting.py`:
 
-Each worksheet must use this fixed layout:
-- **column 0** = wavelength in **nm**
-- **column 1** = intensity
-- data start at **row index 2** (the first two rows are skipped)
+1. reads the data from a text, CSV or Excel file. The x axis may be wavelength (nm, µm or Å) or wavenumber (cm⁻¹ or µm⁻¹), in either order, and evenly or unevenly spaced;
+2. splits the spectrum into continuous segments. A spectrum merged from several overlapping detector windows is split back into its windows. Overlap regions, where points from two windows interleave, are discarded, and nothing is interpolated across gaps. A single continuous spectrum stays as one segment;
+3. converts each segment to wavenumber, where the fringes are evenly spaced, and divides it by a smooth Savitzky–Golay baseline;
+4. locates each fringe maximum (or minimum) and fits it, over one fringe period, with a Gaussian on a linear background. The Gaussian is used only to locate the centre, not as a model of the Fabry–Perot line shape. By default a cosine fit over the same range is also made; it rejects poor fringes and checks the centres;
+5. writes a table of fringe centres and an overview plot.
 
-## How to run
+The fringe period sets the size of the baseline and fit windows. It is estimated automatically from the strongest Fourier component of the spectrum. It can also be given directly, or from the approximate optical path *nt*.
 
-1. Set the file paths at the top of the script:
-   - `INPUT_FILE`
-   - `OUTPUT_DIR`
+Assigning fringe orders and calculating the refractive index from the centres are separate steps that are not included here.
 
-2. Check the analysis settings in `FringeConfig`.
+## Installation
 
-3. Run the script in Python.  
-   It will process **all sheets** in the workbook.
+Python 3.9 or later.
 
-## What you may need to change for your own data
+```
+pip install -r requirements.txt
+```
 
-### File locations
-Edit:
-- `INPUT_FILE`
-- `OUTPUT_DIR`
+## Command line
 
-### Main fitting and detection settings
-These are the most likely parameters to adjust:
+```
+python fringe_fitting.py examples/KCl_0.68GPa_full_range.csv --out results
+```
 
-- `avg_peak_spacing_um_inv`  
-  approximate fringe spacing; affects fitting window size
+Some other examples:
 
-- `peak_prominence`  
-  increase if too many weak peaks are detected; decrease if real peaks are missed
+```
+# several spectra in one file: x in column 0, intensities in all other columns
+python fringe_fitting.py data.csv --y-col all
 
-- `min_peak_spacing_um_inv`  
-  minimum allowed spacing between neighbouring fitted peaks in spectral units
+# reflection spectrum against wavenumber in cm-1: fit the fringe minima
+python fringe_fitting.py reflection.txt --x-unit cm-1 --minima
 
-- `r2_min_processed`  
-  Stage 1 fit-quality threshold
+# a single continuous spectrum with sharper (higher-finesse) fringes
+python fringe_fitting.py film.dat --no-split --no-cosine-check
 
-- `r2_min_raw`  
-  Stage 2 fit-quality threshold
+# one sheet of a workbook, with the period set from an optical path of about 125 um
+python fringe_fitting.py spectra.xlsx --sheet Data3 --optical-path 125
+```
 
-- `width_min_um_inv`, `width_max_um_inv`  
-  allowed Gaussian width range
+| Option | Meaning |
+| --- | --- |
+| `--out FOLDER` | output folder (default `results`) |
+| `--sheet NAME` | process only this sheet of a workbook (default: every sheet) |
+| `--x-col N` | column of the x values, counting from 0 (default 0) |
+| `--y-col LIST` | intensity column(s): `1`, `1,2,3` or `all` (default 1) |
+| `--x-unit UNIT` | `nm` (default), `um`, `angstrom`, `cm-1` or `um-1` |
+| `--period P` | fringe period in µm⁻¹ |
+| `--optical-path UM` | approximate optical path *nt* in µm; sets the period to 1/(2*nt*) |
+| `--minima` | fit fringe minima instead of maxima |
+| `--no-split` | treat each spectrum as one continuous segment |
+| `--no-cosine-check` | accept fringes on the Gaussian fit alone (useful for sharper fringes) |
+| `--period-per-segment` | estimate the period separately for each segment |
+| `--baseline-periods N` | baseline smoothing window in fringe periods (default 2.5) |
+| `--edge-trim N` | points dropped at each end of a segment (default 20) |
+| `--no-plot` | do not write overview plots |
 
-- `sg_window`, `sg_poly`  
-  smoothing strength for the Savitzky-Golay filter
+Further settings are in the `Settings` class at the top of the script. The defaults are the values used for the paper.
 
-### Delta / dispersion settings
-These settings control which fringe pairs are used for delta calculations:
+## Python
 
-- `p_min_index_spacing`  
-  minimum allowed **fringe-index spacing** between the two fringes used to calculate a delta value
+```python
+from fringe_fitting import fit_fringes, read_spectra, Settings
 
-  Example: if `p_min_index_spacing = 5`, then pairs with fringe-number gaps smaller than 5 are excluded from delta and dispersion calculations.
+table = fit_fringes(wavelength_nm, intensity)                  # numpy arrays or lists
+table = fit_fringes(wavenumber_cm, intensity, x_unit="cm-1",
+                    settings=Settings(minima=True))
 
-The scalar delta summaries and the dispersion outputs are generated from the same valid pair set.
+for name, (x, y) in read_spectra("spectra.xlsx").items():
+    print(name, len(fit_fringes(x, y)))
+```
 
-### Baseline settings
-If the background shape changes significantly between datasets, you may also need to adjust:
-- `baseline_lambda`
-- `baseline_p`
+## Input files
+
+- **Formats:** `.csv`, `.txt`, `.dat` (comma, semicolon, tab or space separated) and `.xlsx`/`.xls` workbooks. In a workbook each sheet is a separate spectrum.
+- **Headers:** header and comment lines are skipped automatically. Any row whose x and intensity are not numbers is ignored.
+- **Columns:** by default x is in the first column and intensity in the second; use `--x-col` and `--y-col` otherwise.
 
 ## Output
 
-For each sheet, the script writes:
-- `<sheet>_Peaks.xlsx`  
-  with `Raw` and `Processed` peak tables
-- `<sheet>_Delta.xlsx`  
-  with per-sheet delta summary values
-- `<sheet>_Dispersion.xlsx`  
-  with `Raw` and `Processed` sheets containing all valid delta values versus average wavelength
-- `<sheet>_Overview.png`
-- `<sheet>_Overview_Processed.png`
+For each spectrum:
 
-It also writes:
-- `Delta_Summary.xlsx`  
-  containing one summary row per sheet
-- `Dispersion_Summary.xlsx`  
-  containing one worksheet per dataset, with that dataset’s dispersion results
+- `<name>_fringes.csv`: one row per fringe, sorted by wavenumber.
 
-## Dispersion output
+  | Column | Meaning |
+  | --- | --- |
+  | `segment` | continuous segment (detector window) the fringe belongs to |
+  | `wavelength_nm`, `wavenumber_um_inv`, `wavenumber_cm_inv` | fitted fringe centre |
+  | `wavenumber_err_um_inv` | statistical uncertainty of the centre |
+  | `gaussian_amplitude`, `gaussian_width_um_inv` | height (normalised units) and width of the Gaussian |
+  | `cosine_wavenumber_um_inv` | centre from the cosine check fit |
+  | `gauss_minus_cosine_um_inv` | difference between the two centres |
+  | `fit_rms` | rms residual of the Gaussian fit |
 
-The dispersion tables contain the individual delta values used for dispersion analysis rather than only a single averaged delta.
+- `<name>_overview.png`: the normalised spectrum with the fitted centres marked and, when the cosine check is on, the Gaussian − cosine difference for each fringe.
 
-Each dispersion row corresponds to one valid fringe pair and includes:
-- left fringe number
-- right fringe number
-- index spacing
-- pair order
-- left wavelength
-- right wavelength
-- average wavelength
-- delta
+Always check the overview plot for a new dataset. A few fitted fringes may be poor, for example at segment edges or where a fringe is distorted. In the paper such fringes were removed at the next stage, when fringe orders were assigned: fringes more than 0.15 nm from the smooth fringe-order curve were rejected.
 
-The **average wavelength** is used as the x-value for dispersion analysis.
+## Working range
 
-## Notes
+Tested on synthetic Fabry–Perot spectra with known fringe positions (`tests/`), across 500–800 nm with 6000 points:
 
-- Always check the overview plots when using a new dataset.
-- If fitting fails for a sheet, the script still writes empty output files and records the sheet status.
-- Fringe numbers are never renumbered after initial assignment, even if some fringes are later rejected.
-- The fixed worksheet layout is assumed throughout this version of the script.
+| Case | Median centre error (fraction of the fringe spacing) |
+| --- | --- |
+| 3–50 µm thick layer (7–115 fringes) | below 0.1% |
+| 100–200 µm (14–28 points per fringe) | 0.1–0.2% |
+| 400 µm (7 points per fringe) | 0.3% |
+| 1% noise | 0.3% |
+| 3% noise | 1% |
+| sharper fringes (finesse ≈ 5) | below 0.1% |
+
+At least about five points per fringe and five fringes per segment are needed.
+
+Run the tests with:
+
+```
+python -m pytest tests
+```
+
+## Example data
+
+`examples/KCl_0.68GPa_full_range.csv` is the KCl spectrum at 0.68 GPa used in Figs. 4 and 5 of the paper. It contains six detector windows covering 419–772 nm, with a gap between 530 and 550 nm.
+
+## Earlier version
+
+The `legacy` folder contains the notebook and single-window example from the original submission. That version calculated the optical path δ from pairs of fringes. For a dispersive sample this gives the group optical path *n*<sub>g</sub>*t* rather than *nt*, so it has been superseded by the analysis described in the paper.
+
+## Licence
+
+MIT; see `LICENSE`.
