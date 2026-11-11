@@ -2,7 +2,7 @@
 
 Finds and fits the interference fringes in transmission or reflection spectra of thin transparent layers, such as the sample chamber of a diamond anvil cell (DAC), a film or a plate. Each fringe is fitted with a Gaussian to give its centre.
 
-This is the fringe-fitting step used in R. O'Beirne and J. E. Proctor, *Dispersion of the Refractive Index of KCl up to 5 GPa Measured Using Confocal Laser Microscopy and White-Light Interferometry* (submitted). With its default settings it reproduces the 203 fringe centres used for the 0.68 GPa KCl spectrum in the paper exactly. It is written to work on other fringe spectra without changes to the code.
+This is the fringe-fitting step used in R. O'Beirne and J. E. Proctor, *Dispersion of the Refractive Index of KCl up to 5 GPa Measured Using Confocal Laser Microscopy and White-Light Interferometry* (submitted). With its default settings it reproduces exactly the 203 fringe centres fitted to the 0.68 GPa KCl spectrum in the paper. It is written to work on other fringe spectra without changes to the code.
 
 ## What it does
 
@@ -104,7 +104,7 @@ For each spectrum:
 
 - `<name>_overview.png`: the normalised spectrum with the fitted centres marked and, when the cosine check is on, the Gaussian − cosine difference for each fringe.
 
-Always check the overview plot for a new dataset. A few fitted fringes may be poor, for example at segment edges or where a fringe is distorted. In the paper such fringes were removed at the next stage, when fringe orders were assigned: fringes more than 0.15 nm from the smooth fringe-order curve were rejected.
+Always check the overview plot for a new dataset. A few fitted fringes may be poor, for example at segment edges or where a fringe is distorted. In the paper such fringes were removed at the next stage, when fringe orders were assigned: fringes more than 0.15 nm from the smooth fringe-order curve were rejected (196 of the 203 fringes at 0.68 GPa were kept), and small constant calibration offsets between detector windows (up to 0.03 nm) were then removed.
 
 ## Working range
 
@@ -133,7 +133,7 @@ python -m pytest tests
 
 ## Earlier version
 
-The `legacy` folder contains the notebook and single-window example from the original submission. That version calculated the optical path δ from pairs of fringes. For a dispersive sample this gives the group optical path *n*<sub>g</sub>*t* rather than *nt*, so it has been superseded by the analysis described in the paper.
+The `legacy` folder contains the notebook and single-window example from the original submission. That version calculated the optical path δ from pairs of fringes with a formula that assumes a non-dispersive sample. For a dispersive sample this gives the group optical path *n*<sub>g</sub>*t* rather than *nt*, so it has been superseded by the analysis described in the paper.
 
 ## Licence
 
